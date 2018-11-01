@@ -69,15 +69,15 @@ class BundleProxy
      */
     public function addLocator(LocatorInterface $locator)
     {
-        $locatorClass = get_class($locator);
+        $locatorClass = \get_class($locator);
         $matcherClass = $locatorClass . static::LOCATOR_MATCHER_SUFFIX;
+
         if (!class_exists($matcherClass)) {
             throw new LogicException(sprintf('Could not find a "%s"!', $matcherClass));
         }
-        $matcher = new $matcherClass();
 
-        $this->locator[] = $locator;
-        $this->locatorMatcher[$locatorClass] = $matcher;
+        $this->locator[$locatorClass] = $locator;
+        $this->locatorMatcher[$locatorClass] = new $matcherClass();
 
         return $this;
     }
@@ -88,25 +88,20 @@ class BundleProxy
      *
      * @throws \LogicException
      *
-     * @return object
+     * @return mixed
      */
-    public function __call($method, $arguments)
+    public function __call(string $method, array $arguments = [])
     {
-        $key = $this->bundle . '-' . $method;
-        if (isset(static::$cache[$key])) {
-            $locatedClassName = static::$cache[$key];
-
-            return new $locatedClassName();
+        if (isset(static::$cache[$this->bundle][$method])) {
+            return static::$cache[$this->bundle][$method];
         }
 
-        foreach ($this->locator as $locator) {
-            $matcher = $this->locatorMatcher[get_class($locator)];
-            if ($matcher->match($method)) {
-                $located = $locator->locate(ucfirst($this->bundle));
-                static::$cache[$key] = get_class($located);
-
-                return $located;
+        foreach ($this->locator as $locatorClassName => $locator) {
+            if (!$this->locatorMatcher[$locatorClassName]->match($method)) {
+                continue;
             }
+
+            return static::$cache[$this->bundle][$method] = $locator->locate(ucfirst($this->bundle));
         }
 
         throw new LogicException(sprintf('Could not map method "%s" to a locator!', $method));
